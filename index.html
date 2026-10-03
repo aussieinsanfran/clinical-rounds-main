@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clinical Rounds: The Night Shift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: a night-unit workstation — census board on the left, the open chart on the right; vitals read like a bedside monitor. Committed single dark look. */
+:root{
+  --night:#0e1522; --panel:#162033; --panel-2:#1c2840; --line:#2b3b58;
+  --text:#e6ecf5; --muted:#97a6bf; --lamp:#f0b450; --lamp-ink:#1d1606;
+  --ok:#57d19c; --warn:#ff9f5a; --crit:#ff6b6b;
+  --hr:#5fe08c; --spo2:#5cc8ff; --bp:#ff8a8a; --rr:#f5d76e; --temp:#c9a4ff;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r:10px;
+  color-scheme:dark;
+}
+html,body{background:var(--night);color:var(--text);margin:0}
+body{font-family:var(--f-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:0 40px}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--night);border-bottom:1px solid var(--line);
+  display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding-block:14px;margin-inline:-16px;padding-inline:16px}
+.brand{display:flex;flex-direction:column;gap:0;min-width:0}
+.brand small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.brand h1{font-family:var(--f-display);font-weight:700;font-size:clamp(20px,3.2vw,28px);margin:0;line-height:1.1;text-wrap:balance}
+.brand h1 span{color:var(--lamp)}
+.hud{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.hud div{display:flex;flex-direction:column}
+.hud label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.hud b{font-family:var(--f-mono);font-size:20px;font-variant-numeric:tabular-nums;font-weight:600}
+.hud .clock b{color:var(--lamp)}
+
+.wrap{display:grid;grid-template-columns:270px minmax(0,1fr);gap:20px;max-width:1180px;margin:20px auto 0}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr)}}
+
+/* Census */
+.census{display:flex;flex-direction:column;gap:8px;align-self:start;position:sticky;top:calc(env(safe-area-inset-top,0px) + 86px)}
+.census h2{font-family:var(--f-display);font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 4px;font-weight:500}
+.census p.hint{margin:0 0 6px;color:var(--muted);font-size:13px}
+.rooms{display:flex;flex-direction:column;gap:6px}
+@media (max-width:820px){
+  .census{position:static}
+  .rooms{flex-direction:row;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+  .room{min-width:190px;scroll-snap-align:start}
+}
+.room{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:10px;text-align:left;
+  background:transparent;border:1px solid var(--line);border-radius:var(--r);padding:9px 10px;cursor:pointer}
+.room:hover{background:var(--panel)}
+.room[aria-current="true"]{background:var(--panel-2);border-color:var(--lamp)}
+.room .num{font-family:var(--f-mono);font-weight:600;color:var(--lamp);font-size:14px}
+.room .who{min-width:0}
+.room .who b{display:block;font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room .who span{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--muted)}
+.dot.prog{border-color:var(--lamp);background:transparent;box-shadow:inset 0 0 0 2px var(--night),inset 0 0 0 6px var(--lamp)}
+.dot.s3{background:var(--ok);border-color:var(--ok)}
+.dot.s2{background:var(--lamp);border-color:var(--lamp)}
+.dot.s1,.dot.s0{background:var(--crit);border-color:var(--crit)}
+.reportbtn{margin-top:8px;background:var(--lamp);color:var(--lamp-ink);border:0;border-radius:var(--r);padding:10px 12px;font-weight:600;cursor:pointer}
+.reportbtn:disabled{background:var(--panel-2);color:var(--muted);cursor:not-allowed}
+
+/* Chart */
+.chart{min-width:0;display:flex;flex-direction:column;gap:16px}
+.pt-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.pt-head .rm{font-family:var(--f-mono);color:var(--lamp);font-size:14px;letter-spacing:.06em}
+.pt-head h2{font-family:var(--f-display);font-size:clamp(24px,3.6vw,34px);margin:0;line-height:1.1;font-weight:700;text-wrap:balance}
+.pt-head .dx{color:var(--muted);flex-basis:100%;font-size:15px}
+
+.monitor{background:#060a12;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px 14px}
+@media (max-width:620px){.monitor{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.vital label{display:block;font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;opacity:.85}
+.vital b{display:block;font-family:var(--f-mono);font-size:clamp(20px,3vw,28px);font-weight:600;font-variant-numeric:tabular-nums;line-height:1.15}
+.vital small{font-family:var(--f-mono);font-size:11px;opacity:.75}
+.v-hr{color:var(--hr)} .v-bp{color:var(--bp)} .v-spo2{color:var(--spo2)} .v-rr{color:var(--rr)} .v-t{color:var(--temp)}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+@media (max-width:700px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.box h3{margin:0 0 8px;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.sbar{display:grid;grid-template-columns:22px minmax(0,1fr);gap:4px 10px;margin:0}
+.sbar dt{font-family:var(--f-mono);font-weight:600;color:var(--lamp)}
+.sbar dd{margin:0 0 6px}
+.labs{width:100%;border-collapse:collapse;font-size:14px}
+.labs td{padding:4px 0;border-bottom:1px solid var(--line)}
+.labs td:last-child{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.labs tr.flag td:last-child{color:var(--warn);font-weight:600}
+.labs tr.flag td:last-child::after{content:" ▲"}
+.labs tr.flag.lo td:last-child::after{content:" ▼"}
+.meds{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.meds li{padding-left:14px;position:relative}
+.meds li::before{content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;border-radius:1px;background:var(--muted)}
+
+/* Stability */
+.stab{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.stab .bar{flex:1 1 220px;height:12px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);overflow:hidden}
+.stab .fill{height:100%;border-radius:6px;transition:width .6s ease,background-color .6s ease}
+.stab .lbl{font-family:var(--f-mono);font-size:13px;font-variant-numeric:tabular-nums;min-width:4ch}
+.pill{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.04em;padding:3px 10px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.crit{color:var(--crit)} .pill.mute{color:var(--muted)}
+
+/* Questions */
+.q{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.q .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.q .tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);font-weight:600}
+.q .step{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.q .time{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-left:auto}
+.q p.stem{margin:0 0 12px;font-size:16px;max-width:68ch}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start;text-align:left;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.opt:hover:not(:disabled){border-color:var(--lamp)}
+.opt:disabled{cursor:default}
+.opt .k{font-family:var(--f-mono);font-weight:600;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;border:1px solid var(--line);font-size:13px}
+.opt.right{border-color:var(--ok)} .opt.right .k{background:var(--ok);color:var(--night);border-color:var(--ok)}
+.opt.wrong{border-color:var(--crit)} .opt.wrong .k{background:var(--crit);color:var(--night);border-color:var(--crit)}
+.opt.dim{opacity:.55}
+.why{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.why p{margin:0;max-width:72ch}
+.why .verdict{font-weight:600}
+.why .verdict.ok{color:var(--ok)} .why .verdict.bad{color:var(--crit)}
+.done-q{opacity:.82}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:500}
+.btn.primary{background:var(--lamp);color:var(--lamp-ink);border-color:var(--lamp);font-weight:600}
+.btn:hover{filter:brightness(1.08)}
+
+.outcome{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);padding:4px 0 4px 14px}
+.outcome.ok{border-color:var(--ok)} .outcome.warn{border-color:var(--warn)} .outcome.crit{border-color:var(--crit)}
+.outcome h3{margin:0;font-family:var(--f-display);font-size:20px}
+.outcome p{margin:0;color:var(--muted);max-width:70ch}
+
+/* Report */
+.report h2{font-family:var(--f-display);font-size:clamp(26px,4vw,36px);margin:0}
+.report .sub{color:var(--muted);margin:4px 0 0}
+.cats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:620px){.cats{grid-template-columns:minmax(0,1fr)}}
+.cat b{font-family:var(--f-mono);font-size:28px;font-variant-numeric:tabular-nums;display:block}
+.cat span{color:var(--muted);font-size:13px}
+.tbl-wrap{overflow-x:auto}
+.rtbl{width:100%;border-collapse:collapse;font-size:14px;min-width:520px}
+.rtbl th{text-align:left;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.rtbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.rtbl td.n{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.review{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.field{display:flex;flex-direction:column;gap:4px;max-width:360px}
+.field label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.field input{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px;color:var(--text);font:inherit}
+textarea.copytext{width:100%;min-height:180px;background:#060a12;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--f-mono);font-size:12.5px}
+.note{color:var(--muted);font-size:13px;max-width:75ch}
+.toast{font-size:13px;color:var(--ok)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><small>Med-Surg 4 West · Night shift</small><h1>Clinical Rounds: <span>The Night Shift</span></h1></div>
+  <div class="hud">
+    <div class="clock"><label>Unit clock</label><b id="clock">19:00</b></div>
+    <div><label>Patients seen</label><b id="seen">0/10</b></div>
+    <div><label>Score</label><b id="score">0/30</b></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <aside class="census" aria-label="Unit census">
+    <h2>Census</h2>
+    <p class="hint">Ten patients, three decisions each. Open any room; finish all ten for your end-of-shift report.</p>
+    <div class="rooms" id="rooms"></div>
+    <button class="reportbtn" id="reportBtn" disabled>End-of-shift report</button>
+    <button class="btn" id="resetBtn" style="margin-top:2px">Start a new shift</button>
+  </aside>
+  <main class="chart" id="chart" aria-live="polite"></main>
+</div>
+
+<script>
+const CASES = [
+{id:"401",name:"Walter Ng",age:78,sex:"M",dx:"Acute decompensated heart failure (HFrEF, EF 25%)",
+ s:"Short of breath lying flat; up 3 kg since last clinic visit.",
+ b:"Admitted this afternoon. Hx HFrEF, atrial fibrillation, HTN. Lives alone, inconsistent with his low-sodium diet.",
+ a:"Fine crackles both bases, +2 pitting edema to mid-shin, JVD at 45°. Sleeping on three pillows.",
+ r:"Digoxin due at 2100. Furosemide IV given at 1600; strict I&O and daily weight ordered.",
+ v:{hr:"58",hrn:"apical, irregular",bp:"142/88",spo2:"91",o2:"2 L NC",rr:"24",t:"36.8"},
+ labs:[["Potassium","3.2 mEq/L","lo"],["Sodium","134 mEq/L","lo"],["BNP","1,840 pg/mL","hi"],["Creatinine","1.3 mg/dL","hi"],["Digoxin level","pending",""]],
+ meds:["Furosemide 40 mg IV BID","Digoxin 0.125 mg PO daily (2100)","Lisinopril 10 mg PO daily","Metoprolol succinate 25 mg PO daily"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Left-sided heart failure and pulmonary congestion",
+   stem:"Mr. Ng has fine crackles in both lung bases. What is causing them?",
+   o:["The right ventricle is failing, so blood backs up into the lungs.",
+      "The left ventricle can't eject effectively, so pressure backs up into the pulmonary capillaries and fluid moves into the alveoli.",
+      "Bronchospasm from fluid overload narrows the small airways.",
+      "A new pneumonia is filling the alveoli with exudate."],
+   c:1,why:"Left ventricular failure raises left atrial and pulmonary capillary hydrostatic pressure. Fluid is pushed into the interstitium and alveoli, producing crackles, orthopnea and low SpO2. Right-sided failure backs up into the systemic veins instead (JVD, edema, hepatomegaly)."},
+  {cat:"Pharmacology",topic:"Digoxin safety: apical pulse and potassium",
+   stem:"It is 2100. Apical pulse is 58 for one full minute and this evening's potassium is 3.2 mEq/L. What do you do with the digoxin?",
+   o:["Give it; the heart rate is above 50.",
+      "Give it with an oral potassium supplement at the same time.",
+      "Hold it and notify the provider of the heart rate and the potassium.",
+      "Give half the dose and recheck the apical pulse in an hour."],
+   c:2,why:"Hold digoxin for an apical rate below 60 in adults (or per the order's parameters). Hypokalemia lets more digoxin bind to the Na⁺/K⁺-ATPase pump and raises the risk of toxicity and dysrhythmias, especially while furosemide is wasting potassium. Nurses do not split or alter the dose without an order."},
+  {cat:"Prioritization & Safety",topic:"Evaluating diuretic therapy",
+   stem:"Which finding at 0600 best shows the furosemide is reducing his fluid overload?",
+   o:["Weight down 1.2 kg from yesterday, same scale, same time, same clothing.",
+      "Urine output 30 mL/h for the past 4 hours.",
+      "Potassium now 3.0 mEq/L.",
+      "Blood pressure 118/70."],
+   c:0,why:"Daily weight is the most reliable measure of fluid balance: 1 kg is roughly 1 L of fluid. Thirty mL/h is only the minimum acceptable output. A falling potassium is an adverse effect to report, and a lower blood pressure doesn't confirm fluid has come off."}
+ ]},
+{id:"402",name:"Ana Torres",age:24,sex:"F",dx:"Diabetic ketoacidosis, type 1 diabetes",
+ s:"Nausea and vomiting for two days; ran out of insulin.",
+ b:"Type 1 diabetes since age 11. Lost her pharmacy coverage last month.",
+ a:"Deep, rapid breathing; fruity breath; dry mucous membranes; drowsy but oriented.",
+ r:"Regular insulin infusion ordered per DKA protocol. Second liter of 0.9% NaCl running.",
+ v:{hr:"118",hrn:"sinus tach",bp:"98/60",spo2:"99",o2:"room air",rr:"30",t:"37.2"},
+ labs:[["Glucose","562 mg/dL","hi"],["pH (venous)","7.12","lo"],["Bicarbonate","9 mEq/L","lo"],["Potassium","3.1 mEq/L","lo"],["Anion gap","26","hi"],["Beta-hydroxybutyrate","6.4 mmol/L","hi"]],
+ meds:["Regular insulin IV infusion per protocol (not yet started)","0.9% NaCl at 500 mL/h","Potassium chloride IV per protocol"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Kussmaul respirations as respiratory compensation",
+   stem:"Why is Ms. Torres breathing deeply and rapidly?",
+   o:["She is hypoxemic from aspiration of vomit.",
+      "Her lungs are blowing off CO₂ to compensate for metabolic acidosis from ketoacids.",
+      "Anxiety about hospitalization is causing hyperventilation.",
+      "Fluid resuscitation has caused pulmonary edema."],
+   c:1,why:"Without insulin, fat breaks down into ketoacids and bicarbonate is consumed. The respiratory center responds by increasing the rate and depth of breathing (Kussmaul respirations) to exhale CO₂ and raise pH. Her SpO2 is 99%, so hypoxemia isn't the driver."},
+  {cat:"Pharmacology",topic:"Potassium before an insulin infusion",
+   stem:"The insulin infusion is ready to hang. Her potassium is 3.1 mEq/L. What is the right action?",
+   o:["Start the insulin now; correcting the acidosis comes first.",
+      "Give an IV insulin bolus to speed ketone clearance.",
+      "Replace potassium first and hold the insulin until K⁺ is at least 3.3 mEq/L, per protocol, and update the provider.",
+      "Give sodium bicarbonate to correct the pH before anything else."],
+   c:2,why:"Insulin drives potassium into cells. Starting it with K⁺ below 3.3 mEq/L can cause severe hypokalemia and fatal dysrhythmias. Total-body potassium is depleted in DKA even when the serum level looks normal. Bicarbonate is reserved for very severe acidosis and also shifts potassium into cells."},
+  {cat:"Prioritization & Safety",topic:"DKA: continue insulin until the anion gap closes",
+   stem:"At 0300 her glucose is 248 mg/dL but the anion gap is still 18. What do you expect next?",
+   o:["Stop the insulin infusion because the glucose goal is reached.",
+      "Add dextrose to the IV fluids and continue the insulin infusion.",
+      "Switch to subcutaneous insulin now and stop the infusion at the same time.",
+      "Give 50% dextrose IV push."],
+   c:1,why:"Glucose falls faster than ketosis resolves. Insulin must continue until the anion gap closes, so dextrose is added to prevent hypoglycemia. When the infusion is eventually stopped, basal subcutaneous insulin is given 1 to 2 hours beforehand so there's no gap in coverage."}
+ ]},
+{id:"403",name:"Harold Briggs",age:69,sex:"M",dx:"COPD exacerbation",
+ s:"Worse breathlessness and more sputum for three days.",
+ b:"Severe COPD, 50 pack-years, quit 2 years ago. Home O2 2 L at night.",
+ a:"Tripod position, pursed-lip breathing, accessory muscle use, diminished breath sounds with expiratory wheezes, barrel chest.",
+ r:"ABG drawn at 2130. Albuterol neb due; prednisone started.",
+ v:{hr:"104",hrn:"sinus tach",bp:"138/82",spo2:"86",o2:"2 L NC",rr:"26",t:"37.4"},
+ labs:[["pH","7.33","lo"],["PaCO₂","58 mmHg","hi"],["HCO₃⁻","30 mEq/L","hi"],["PaO₂","54 mmHg","lo"],["WBC","11.2 ×10³/µL","hi"]],
+ meds:["Albuterol 2.5 mg neb q4h and q1h PRN","Ipratropium 0.5 mg neb q6h","Prednisone 40 mg PO daily","Azithromycin 500 mg PO daily","O₂ titrated to target"],
+ qs:[
+  {cat:"Pathophysiology",topic:"ABG interpretation: compensated respiratory acidosis",
+   stem:"How do you interpret this ABG: pH 7.33, PaCO₂ 58, HCO₃⁻ 30?",
+   o:["Metabolic alkalosis, uncompensated",
+      "Respiratory acidosis, partially compensated by renal bicarbonate retention",
+      "Metabolic acidosis with respiratory compensation",
+      "Normal ABG for a patient with COPD"],
+   c:1,why:"The pH is low and the PaCO₂ is high, so the primary problem is respiratory acidosis from air trapping and hypoventilation. The kidneys have retained bicarbonate (30), but the pH is still below 7.35, so compensation is partial."},
+  {cat:"Prioritization & Safety",topic:"Oxygen targets for chronic CO₂ retainers",
+   stem:"His SpO2 is 86% on 2 L. What oxygen target should you titrate to?",
+   o:["100% using a non-rebreather mask",
+      "95% to 100%",
+      "88% to 92%",
+      "Leave him on 2 L; that's his home setting."],
+   c:2,why:"Hypoxemia must be corrected, but in chronic CO₂ retainers high-flow oxygen can worsen hypercapnia (V/Q mismatch and the Haldane effect). A target of 88% to 92% treats hypoxemia while limiting CO₂ narcosis. Never withhold oxygen from a hypoxemic patient."},
+  {cat:"Pharmacology",topic:"Rescue bronchodilator: albuterol",
+   stem:"He is suddenly more breathless at 0100. Which PRN medication do you give, and what side effects should you expect?",
+   o:["Ipratropium; expect dry mouth.",
+      "Salmeterol; expect improvement within minutes.",
+      "Albuterol neb; expect tremor and a rise in heart rate.",
+      "An extra dose of prednisone; expect relief within 15 minutes."],
+   c:2,why:"Albuterol is a short-acting beta-2 agonist that relaxes bronchial smooth muscle within minutes, so it's the rescue drug. Its beta stimulation commonly causes tremor, tachycardia and nervousness. Salmeterol is long-acting and never used for rescue, and corticosteroids take hours to work."}
+ ]},
+{id:"404",name:"Gloria Patel",age:66,sex:"F",dx:"Left leg DVT, post-op day 5 total knee replacement",
+ s:"Left calf swelling and pain since yesterday.",
+ b:"Right total knee replacement 5 days ago. Obesity (BMI 36). Mobility limited by pain.",
+ a:"Left calf 4 cm larger than right, warm, tender. Breath sounds clear, no chest pain.",
+ r:"Heparin infusion per weight-based nomogram since post-op day 1 for a confirmed DVT. Morning labs back.",
+ v:{hr:"84",hrn:"sinus",bp:"128/76",spo2:"97",o2:"room air",rr:"16",t:"37.0"},
+ labs:[["aPTT","64 sec","hi"],["Platelets (admission)","280 ×10³/µL",""],["Platelets (today)","118 ×10³/µL","lo"],["Hemoglobin","10.9 g/dL","lo"]],
+ meds:["Heparin infusion per nomogram","Heparin 10 units/mL line flushes","Oxycodone 5 mg PO q4h PRN","Warfarin planned for discharge"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Virchow's triad",
+   stem:"Which explanation best accounts for Mrs. Patel's DVT?",
+   o:["Venous stasis from immobility, endothelial injury from surgery, and post-op hypercoagulability",
+      "Arterial plaque rupture in the popliteal artery",
+      "Excess platelets produced after blood loss",
+      "Lymphatic obstruction from the knee incision"],
+   c:0,why:"Virchow's triad is stasis, vessel wall injury and hypercoagulability. Orthopedic surgery of the lower limb produces all three, which is why it carries one of the highest DVT risks."},
+  {cat:"Pharmacology",topic:"Heparin-induced thrombocytopenia (HIT)",
+   stem:"Her platelets fell from 280 to 118 ×10³/µL on day 5 of heparin. What do you do?",
+   o:["Continue the infusion and recheck platelets tomorrow.",
+      "Stop all heparin, including line flushes, and notify the provider about possible HIT.",
+      "Give protamine sulfate.",
+      "Request a platelet transfusion."],
+   c:1,why:"A drop of more than 50% from baseline, 5 to 10 days into heparin, points to heparin-induced thrombocytopenia. HIT is a prothrombotic emergency. All heparin stops, including flushes and heparin-coated lines, and the provider starts a non-heparin anticoagulant. Platelet transfusion can worsen thrombosis."},
+  {cat:"Pharmacology",topic:"Warfarin teaching: vitamin K and INR",
+   stem:"Before discharge she'll start warfarin. Which statement shows she understood the teaching?",
+   o:["\"I'll stop eating all green vegetables.\"",
+      "\"I'll keep my vitamin K foods about the same from week to week and get my INR checked as scheduled.\"",
+      "\"I can take ibuprofen for my knee pain.\"",
+      "\"If I bleed, the antidote is protamine.\""],
+   c:1,why:"Warfarin works by blocking vitamin K-dependent clotting factors, so steady intake keeps the INR stable. Cutting out greens isn't needed. NSAIDs raise bleeding risk. The reversal agent for warfarin is vitamin K (or prothrombin complex concentrate); protamine reverses heparin."}
+ ]},
+{id:"405",name:"James Okafor",age:58,sex:"M",dx:"Acute kidney injury on chronic kidney disease stage 3",
+ s:"Weak, \"heavy legs,\" making very little urine.",
+ b:"CKD 3, HTN, type 2 diabetes. Home meds include lisinopril and spironolactone. Recent gastroenteritis.",
+ a:"Generalized weakness, decreased reflexes. Monitor shows peaked T waves and a widening QRS.",
+ r:"Stat chemistry just resulted. Provider at the bedside in 5 minutes.",
+ v:{hr:"52",hrn:"sinus brady, peaked T",bp:"160/94",spo2:"96",o2:"room air",rr:"18",t:"36.9"},
+ labs:[["Potassium","6.8 mEq/L","hi"],["Creatinine","3.9 mg/dL (baseline 1.8)","hi"],["BUN","72 mg/dL","hi"],["Bicarbonate","17 mEq/L","lo"],["Glucose","142 mg/dL","hi"]],
+ meds:["Lisinopril 20 mg daily (home, held)","Spironolactone 25 mg daily (home, held)","Calcium gluconate IV (ordered)","Regular insulin IV with dextrose (ordered)","Sodium zirconium cyclosilicate PO (ordered)"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Causes of hyperkalemia in kidney injury",
+   stem:"Why is Mr. Okafor's potassium so high?",
+   o:["His kidneys are excreting too much potassium.",
+      "Reduced kidney excretion, plus two home drugs that lower aldosterone's effect and cause potassium retention.",
+      "His diabetes has caused potassium to move into his cells.",
+      "Gastroenteritis caused him to absorb excess potassium."],
+   c:1,why:"The kidneys excrete about 90% of dietary potassium. Acute injury reduces that, and ACE inhibitors (less aldosterone) and spironolactone (an aldosterone antagonist) both block potassium excretion. Acidosis adds to it by shifting potassium out of cells."},
+  {cat:"Pharmacology",topic:"Calcium gluconate stabilizes the myocardium",
+   stem:"With K⁺ 6.8 and ECG changes, which ordered medication should be given first?",
+   o:["Sodium zirconium cyclosilicate PO",
+      "Calcium gluconate IV",
+      "Furosemide IV",
+      "Regular insulin IV with dextrose"],
+   c:1,why:"ECG changes mean the heart is at immediate risk. IV calcium stabilizes the cardiac cell membrane within minutes. It doesn't lower potassium, so insulin with dextrose (shifts K⁺ into cells) and a potassium binder or dialysis (removes K⁺) follow."},
+  {cat:"Prioritization & Safety",topic:"Insulin and dextrose for hyperkalemia",
+   stem:"After the calcium, you give IV regular insulin with dextrose. What must you monitor closely afterward?",
+   o:["Blood glucose, because insulin can cause hypoglycemia for several hours",
+      "Urine ketones",
+      "Serum sodium for hypernatremia",
+      "Nothing extra; the dextrose prevents all side effects."],
+   c:0,why:"Insulin moves potassium into cells within 15 to 30 minutes. Hypoglycemia is the main risk, especially in kidney failure where insulin clears slowly, so glucose is checked frequently for several hours. Recheck potassium too, because the shift is temporary."}
+ ]},
+{id:"406",name:"Dale Whitaker",age:61,sex:"M",dx:"Alcohol-related cirrhosis with hepatic encephalopathy",
+ s:"Wife says he's been \"confused and sleeping all day.\"",
+ b:"Cirrhosis, ascites, prior variceal banding. Last drink 3 months ago.",
+ a:"Oriented to person only. Asterixis present. Distended abdomen. Mild scleral icterus.",
+ r:"Lactulose titration. Wife is staying overnight and worried he'll pull his IV.",
+ v:{hr:"94",hrn:"sinus",bp:"104/62",spo2:"96",o2:"room air",rr:"18",t:"37.1"},
+ labs:[["Ammonia","112 µmol/L","hi"],["Albumin","2.4 g/dL","lo"],["INR","1.9","hi"],["Platelets","72 ×10³/µL","lo"],["Sodium","131 mEq/L","lo"],["Bilirubin","3.6 mg/dL","hi"]],
+ meds:["Lactulose 30 mL PO q6h, titrate to 2–3 soft stools/day","Rifaximin 550 mg PO BID","Spironolactone 100 mg PO daily","Furosemide 40 mg PO daily"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Ammonia and hepatic encephalopathy",
+   stem:"Why is Mr. Whitaker confused?",
+   o:["Low albumin is causing cerebral edema directly.",
+      "His failing liver can't convert gut-derived ammonia to urea, and the ammonia reaches the brain.",
+      "He is in alcohol withdrawal.",
+      "His high INR is causing small bleeds in the brain."],
+   c:1,why:"Gut bacteria produce ammonia from protein. A healthy liver converts it to urea for the kidneys to excrete. In cirrhosis, ammonia and other toxins bypass the liver (through shunts and failing cells) and cross the blood-brain barrier, causing confusion and asterixis. His last drink was months ago, so withdrawal doesn't fit."},
+  {cat:"Pharmacology",topic:"Lactulose: intended effect",
+   stem:"Which outcome shows the lactulose is working as intended?",
+   o:["No stool in 24 hours and the ammonia level is stable",
+      "8 watery stools overnight",
+      "2 to 3 soft stools a day with clearer thinking",
+      "Abdominal girth decreasing"],
+   c:2,why:"Lactulose acidifies the colon, trapping ammonia as ammonium so it's excreted in stool, and speeds transit. The goal is 2 to 3 soft stools a day with better mentation. Watery diarrhea means too much: it risks dehydration and hypokalemia, which can worsen encephalopathy."},
+  {cat:"Prioritization & Safety",topic:"Avoiding sedatives in hepatic encephalopathy",
+   stem:"At 0200 he is restless, and his wife asks for \"something to help him sleep.\" What's the best response?",
+   o:["Give a PRN lorazepam dose so he doesn't pull his IV.",
+      "Apply wrist restraints for the rest of the night.",
+      "Avoid sedatives; reorient him, keep the room calm, use safety measures, and tell the provider his mental status has worsened.",
+      "Give diphenhydramine; it's safer than benzodiazepines."],
+   c:2,why:"Sedatives and anticholinergics can deepen encephalopathy and mask neurological changes, and the liver metabolizes many of them poorly. Increased restlessness may mean worsening encephalopathy, so it's reported. Use non-drug measures and the least restrictive safety options first."}
+ ]},
+{id:"407",name:"Rosa Delgado",age:72,sex:"F",dx:"Community-acquired pneumonia with sepsis",
+ s:"Admitted at 1800 with cough and fever; now more confused.",
+ b:"Type 2 diabetes, CKD stage 2. Weight 60 kg.",
+ a:"Crackles right lower lobe, skin warm and flushed, capillary refill 3 sec, new confusion. Urine output 15 mL/h.",
+ r:"Sepsis alert called. Antibiotics ordered but not yet given. Two IVs in place.",
+ v:{hr:"122",hrn:"sinus tach",bp:"84/48",spo2:"92",o2:"4 L NC",rr:"28",t:"39.1"},
+ labs:[["Lactate","4.2 mmol/L","hi"],["WBC","18.6 ×10³/µL","hi"],["Creatinine","1.6 mg/dL","hi"],["Blood cultures","not yet drawn",""],["MAP","60 mmHg","lo"]],
+ meds:["Lactated Ringer's 30 mL/kg (1,800 mL) bolus","Vancomycin IV per pharmacy","Piperacillin-tazobactam IV","Norepinephrine infusion, titrate to MAP ≥ 65"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Distributive shock in sepsis",
+   stem:"Why is Mrs. Delgado's blood pressure so low?",
+   o:["Her heart is pumping weakly after a heart attack.",
+      "Inflammatory mediators cause widespread vasodilation and leaky capillaries, so effective circulating volume falls.",
+      "She is bleeding internally.",
+      "Fever alone has dehydrated her."],
+   c:1,why:"In sepsis, the host response to infection releases mediators such as nitric oxide and cytokines. These dilate blood vessels and increase capillary permeability, so blood pools and fluid leaks into tissues. This is distributive shock, which is why warm, flushed skin appears early."},
+  {cat:"Prioritization & Safety",topic:"Sepsis bundle: cultures, then antibiotics without delay",
+   stem:"Which sequence best follows the sepsis bundle?",
+   o:["Give antibiotics now and draw blood cultures in the morning.",
+      "Draw blood cultures, then give the first antibiotic doses right away while the fluid bolus runs.",
+      "Wait for culture results so antibiotics can be targeted.",
+      "Give acetaminophen and recheck her blood pressure in an hour."],
+   c:1,why:"Cultures are drawn before antibiotics when that doesn't delay them, so the organism can still be identified. Antibiotics should start within one hour of recognizing septic shock, because each hour of delay raises mortality. Crystalloid 30 mL/kg is given for hypotension or a lactate of 4 or more."},
+  {cat:"Pharmacology",topic:"Norepinephrine as first-line vasopressor",
+   stem:"After the full fluid bolus her MAP is 58. What do you anticipate?",
+   o:["Furosemide to protect the kidneys",
+      "Norepinephrine titrated to MAP ≥ 65, with close monitoring of the IV site for extravasation",
+      "Metoprolol to slow the heart rate",
+      "Holding all infusions until the morning labs"],
+   c:1,why:"Hypotension that persists after fluids means septic shock. Norepinephrine is the first-line vasopressor and is titrated to a MAP of at least 65. It can cause tissue necrosis if it leaks, so a central line is preferred and a peripheral site must be checked often."}
+ ]},
+{id:"408",name:"Thomas Reed",age:74,sex:"M",dx:"Suspected acute ischemic stroke (overflow from ED)",
+ s:"Daughter found him unable to speak at 2240.",
+ b:"Atrial fibrillation, stopped his apixaban last month. Last known well 2200.",
+ a:"Right arm and leg weakness, right facial droop, can understand but can't get words out. NIHSS 12.",
+ r:"CT shows no bleed. Stroke team considering alteplase. Family at bedside.",
+ v:{hr:"96",hrn:"atrial fibrillation",bp:"196/112",spo2:"95",o2:"room air",rr:"18",t:"36.7"},
+ labs:[["Glucose","128 mg/dL","hi"],["Platelets","210 ×10³/µL",""],["INR","1.0",""],["CT head","no hemorrhage",""]],
+ meds:["Labetalol 10 mg IV PRN (ordered)","Alteplase IV (pending decision)","NPO"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Stroke localization: left MCA",
+   stem:"Right-sided weakness with expressive aphasia points to which area?",
+   o:["Right middle cerebral artery territory",
+      "Left middle cerebral artery territory",
+      "Cerebellum",
+      "Brainstem"],
+   c:1,why:"Motor pathways cross, so right-sided weakness means a left hemisphere lesion. Language centers (including Broca's area for expressive speech) are in the left hemisphere for most people, supplied by the left MCA. Atrial fibrillation off anticoagulation is a likely embolic source."},
+  {cat:"Pharmacology",topic:"Blood pressure limits for alteplase",
+   stem:"BP is 196/112 and alteplase is being considered. What is the priority?",
+   o:["Give alteplase now; the time window matters most.",
+      "Hold all antihypertensives to protect brain perfusion.",
+      "Lower BP to below 185/110 before alteplase starts, as ordered, then keep it at or below 180/105 afterward.",
+      "Lower BP rapidly to 120/80."],
+   c:2,why:"High pressure raises the risk of bleeding into the brain after thrombolysis. BP must be below 185/110 before alteplase and kept at or below 180/105 for 24 hours. Permissive hypertension applies only to patients who are not receiving thrombolytics, and dropping BP sharply can extend the infarct."},
+  {cat:"Prioritization & Safety",topic:"Dysphagia screening before oral intake",
+   stem:"His daughter asks if he can have a sip of water and his evening pills. What do you say?",
+   o:["Yes, small sips are safe if he sits up.",
+      "He stays NPO until he passes a bedside swallow screen; I can do mouth care in the meantime.",
+      "Yes, crush the pills into applesauce.",
+      "Give the pills with thickened water without a screen."],
+   c:1,why:"Dysphagia is common after stroke and aspiration pneumonia is a major cause of death. Patients stay NPO, including medications, until they pass a validated swallow screen. Mouth care keeps him comfortable and lowers oral bacteria."}
+ ]},
+{id:"409",name:"Linda Brooks",age:55,sex:"F",dx:"Upper GI bleed, suspected peptic ulcer",
+ s:"Vomited dark \"coffee grounds\" twice this evening.",
+ b:"Rheumatoid arthritis; takes ibuprofen 800 mg three times daily. Baseline BP 132/80.",
+ a:"Pale, epigastric tenderness. One black tarry stool at 2000. Endoscopy scheduled for 0800.",
+ r:"Two large-bore IVs, type and crossmatch done, pantoprazole infusion running.",
+ v:{hr:"112",hrn:"sinus tach",bp:"104/68",spo2:"98",o2:"room air",rr:"20",t:"36.9"},
+ labs:[["Hemoglobin","7.8 g/dL","lo"],["BUN","42 mg/dL","hi"],["Creatinine","0.9 mg/dL",""],["INR","1.1",""]],
+ meds:["Pantoprazole 80 mg IV bolus, then 8 mg/h infusion","0.9% NaCl at 125 mL/h","PRBCs 1 unit (if Hgb < 7)","NPO for endoscopy"],
+ qs:[
+  {cat:"Pathophysiology",topic:"NSAIDs and gastric mucosal protection",
+   stem:"How did daily ibuprofen contribute to her ulcer?",
+   o:["It directly increases stomach acid production.",
+      "It blocks COX-1 prostaglandins that maintain the stomach's mucus, bicarbonate and blood flow.",
+      "It causes H. pylori infection.",
+      "It thins the blood the way warfarin does."],
+   c:1,why:"Prostaglandins made by COX-1 protect the gastric lining by stimulating mucus and bicarbonate and maintaining mucosal blood flow. NSAIDs inhibit them, so acid can erode the mucosa. NSAIDs also impair platelet function, which makes bleeding worse."},
+  {cat:"Pharmacology",topic:"IV proton pump inhibitor in GI bleeding",
+   stem:"Why is she on a pantoprazole infusion?",
+   o:["It coats the ulcer like a bandage.",
+      "It raises gastric pH, which helps the clot over the ulcer stay stable and lowers the risk of rebleeding.",
+      "It constricts the bleeding vessel.",
+      "It neutralizes acid instantly like an antacid."],
+   c:1,why:"Proton pump inhibitors block the final step of acid secretion. At a higher pH, clots form and hold better because pepsin and acid break them down less. Sucralfate is the agent that coats ulcers, and octreotide is used for variceal (not ulcer) bleeding."},
+  {cat:"Prioritization & Safety",topic:"Early signs of hypovolemic shock",
+   stem:"Which finding at 0400 most strongly suggests she is still bleeding?",
+   o:["Heart rate up from 112 to 128, new restlessness, and cool clammy skin",
+      "One more black tarry stool",
+      "BUN 42 mg/dL",
+      "Temperature 37.6 °C"],
+   c:0,why:"Rising heart rate, anxiety or restlessness, and cool skin are the body's early compensation for losing volume, and they appear before the blood pressure falls. Tarry stools can continue for days as old blood passes through, and a high BUN with normal creatinine reflects digested blood already in the gut. Call the provider and prepare to transfuse."}
+ ]},
+{id:"410",name:"Kevin Lau",age:47,sex:"M",dx:"Post-op day 1 open bowel resection",
+ s:"Pain controlled earlier; hard to wake at 0530 rounds.",
+ b:"Obstructive sleep apnea; his CPAP machine is still at home. BMI 38.",
+ a:"Snoring with pauses, pinpoint pupils, rouses only to a firm sternal rub and drifts off mid-sentence (POSS 4).",
+ r:"Morphine PCA with demand dosing; 22 doses delivered overnight.",
+ v:{hr:"64",hrn:"sinus",bp:"108/66",spo2:"87",o2:"2 L NC",rr:"8",t:"37.3"},
+ labs:[["EtCO₂ (capnography)","58 mmHg","hi"],["Hemoglobin","12.4 g/dL",""],["Creatinine","1.0 mg/dL",""]],
+ meds:["Morphine PCA 1 mg demand, lockout 10 min","Naloxone 0.4 mg/mL, dilute and titrate per protocol","Ondansetron 4 mg IV PRN"],
+ qs:[
+  {cat:"Pathophysiology",topic:"Opioid-induced respiratory depression",
+   stem:"Why is Mr. Lau breathing so slowly?",
+   o:["Opioids depress the brainstem's response to rising CO₂, and his sleep apnea adds to the risk.",
+      "Abdominal pain is preventing deep breaths.",
+      "He has developed a pulmonary embolism.",
+      "Anemia from surgery is lowering his drive to breathe."],
+   c:0,why:"Opioids act on mu receptors in the medulla and blunt the drive to breathe in response to CO₂, so the rate falls and CO₂ climbs (EtCO₂ 58). Sedation usually comes before respiratory depression. OSA, obesity and an untreated airway raise the risk sharply."},
+  {cat:"Prioritization & Safety",topic:"Responding to opioid oversedation",
+   stem:"RR 8, SpO2 87%, POSS 4. What is your first set of actions?",
+   o:["Turn the oxygen up to 6 L and recheck in 30 minutes.",
+      "Stop the PCA, try to rouse him, support his airway and breathing, call for help, and give naloxone per protocol.",
+      "Hold the next demand dose and let him sleep.",
+      "Raise the head of the bed and reassess in an hour."],
+   c:1,why:"A POSS of 4 with a rate of 8 is respiratory depression and an emergency. Stop the opioid source, stimulate, open the airway and ventilate if needed, call the rapid response team, and give naloxone. Extra oxygen alone can hide rising CO₂ by keeping the SpO2 reading up."},
+  {cat:"Pharmacology",topic:"Naloxone duration and re-sedation",
+   stem:"After titrated naloxone he wakes up and his RR is 14. What does he need now?",
+   o:["Nothing more; one dose fully reverses the morphine.",
+      "Close monitoring, because naloxone can wear off before the morphine does and sedation can return.",
+      "Restart the PCA at the same settings.",
+      "A 2 mg rapid IV push to make sure the effect lasts."],
+   c:1,why:"Naloxone's effect can last 30 to 90 minutes, shorter than many opioids, so sedation and respiratory depression can come back. Monitor continuously, with repeat doses or an infusion as ordered. Small titrated doses reverse breathing without causing severe pain or withdrawal, and the provider must review the PCA order and his CPAP before it restarts."}
+ ]}
+];
+
+// Spread correct answers across A–D with a fixed, repeatable shuffle per question.
+CASES.forEach((c,ci)=>c.qs.forEach((q,qi)=>{
+  let a=(ci*97+qi*31+7)>>>0;const rnd=()=>{a=(a+0x6D2B79F5)>>>0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296};
+  const idx=[0,1,2,3];for(let i=3;i>0;i--){const j=Math.floor(rnd()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]]}
+  q.o=idx.map(i=>q.o[i]);q.c=idx.indexOf(q.c);
+}));
+
+const KEY="night-shift-v1";
+const CATS=["Pathophysiology","Pharmacology","Prioritization & Safety"];
+let state={cur:0,ans:{},name:"",view:"case"};
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.ans)state=Object.assign(state,s)}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const answers=c=>state.ans[c.id]||[];
+const isDone=c=>answers(c).length===c.qs.length;
+const caseScore=c=>answers(c).reduce((n,a,i)=>n+(a===c.qs[i].c?1:0),0);
+function stability(c){let s=55;answers(c).forEach((a,i)=>{s+=a===c.qs[i].c?15:-15});return Math.max(10,Math.min(100,s))}
+function stabTone(s){return s>=85?"ok":s>=55?"warn":"crit"}
+function totals(){let seen=0,score=0,answered=0;CASES.forEach(c=>{if(isDone(c))seen++;score+=caseScore(c);answered+=answers(c).length});return{seen,score,answered}}
+function clockFor(n){const m=19*60+Math.round(n*72);const h=Math.floor(m/60)%24,mm=m%60;return String(h).padStart(2,"0")+":"+String(mm).padStart(2,"0")}
+
+function renderHud(){const t=totals();$("#clock").textContent=clockFor(t.answered/3);$("#seen").textContent=t.seen+"/10";$("#score").textContent=t.score+"/30";
+  $("#reportBtn").disabled=t.seen<CASES.length;}
+
+function renderRooms(){
+  $("#rooms").innerHTML=CASES.map((c,i)=>{
+    const a=answers(c);let cls="dot";if(isDone(c))cls+=" s"+caseScore(c);else if(a.length)cls+=" prog";
+    const st=isDone(c)?caseScore(c)+"/3":a.length?"in progress":"not seen";
+    return `<button class="room" data-i="${i}" aria-current="${state.view==="case"&&state.cur===i}" aria-label="Room ${c.id}, ${esc(c.name)}, ${st}">
+      <span class="num">${c.id}</span><span class="who"><b>${esc(c.name)}</b><span>${esc(c.dx.split(",")[0].split("(")[0])}</span></span><span class="${cls}" title="${st}"></span></button>`}).join("");
+  document.querySelectorAll(".room").forEach(b=>b.onclick=()=>{state.cur=+b.dataset.i;state.view="case";save();render();window.scrollTo({top:0,behavior:"smooth"})});
+}
+
+function renderCase(){
+  const c=CASES[state.cur],a=answers(c),s=stability(c),tone=stabTone(s);
+  const v=c.v;
+  const labs=c.labs.map(l=>`<tr class="${l[2]?"flag "+l[2]:""}"><td>${esc(l[0])}</td><td>${esc(l[1])}</td></tr>`).join("");
+  let qhtml="";
+  c.qs.forEach((q,qi)=>{
+    if(qi>a.length)return;
+    const chosen=a[qi],answered=chosen!==undefined;
+    const opts=q.o.map((t,oi)=>{let cls="opt";if(answered){if(oi===q.c)cls+=" right";else if(oi===chosen)cls+=" wrong";else cls+=" dim"}
+      return `<button class="${cls}" data-q="${qi}" data-o="${oi}" ${answered?"disabled":""}><span class="k">${"ABCD"[oi]}</span><span>${esc(t)}</span></button>`}).join("");
+    let why="";
+    if(answered){const ok=chosen===q.c;
+      why=`<div class="why"><p class="verdict ${ok?"ok":"bad"}">${ok?"Correct. Patient stability improves.":"Not the best choice. The correct answer is "+"ABCD"[q.c]+"."}</p><p>${esc(q.why)}</p></div>`}
+    qhtml+=`<section class="q ${answered?"done-q":""}" aria-label="Decision ${qi+1}">
+      <div class="meta"><span class="tag">${esc(q.cat)}</span><span class="step">Decision ${qi+1} of 3</span><span class="time">${clockFor(state.cur+qi/3)}</span></div>
+      <p class="stem">${esc(q.stem)}</p><div class="opts">${opts}</div>${why}</section>`;
+  });
+  let outcome="";
+  if(isDone(c)){
+    const sc=caseScore(c);
+    const txt=sc===3?["Stable at handoff","Your decisions kept "+c.name.split(" ")[0]+" safe through the night. Day shift receives a clean handoff."]:
+      sc===2?["Guarded","One decision slowed recovery, but the patient is safe at 0700. Review the rationale you missed."]:
+      ["Deteriorating","The rapid response team was called overnight. Review each rationale before your next shift."];
+    const t=sc===3?"ok":sc===2?"warn":"crit";
+    const next=CASES.findIndex((x,i)=>i>state.cur&&!isDone(x)),anyNext=next>=0?next:CASES.findIndex(x=>!isDone(x));
+    outcome=`<div class="outcome ${t}"><h3>${txt[0]} · ${sc}/3</h3><p>${txt[1]}</p></div>
+      <div class="actions">${anyNext>=0?`<button class="btn primary" id="nextBtn" data-n="${anyNext}">Go to Room ${CASES[anyNext].id}</button>`:`<button class="btn primary" id="toReport">See end-of-shift report</button>`}
+      <button class="btn" id="redoBtn">Redo this patient</button></div>`;
+  }
+  $("#chart").innerHTML=`
+   <div class="pt-head"><span class="rm">ROOM ${c.id}</span><h2>${esc(c.name)}, ${c.age} ${c.sex}</h2><span class="dx">${esc(c.dx)}</span></div>
+   <div class="monitor" role="group" aria-label="Bedside monitor">
+     <div class="vital v-hr"><label>HR</label><b>${v.hr}</b><small>${esc(v.hrn)}</small></div>
+     <div class="vital v-bp"><label>NIBP</label><b>${v.bp}</b><small>mmHg</small></div>
+     <div class="vital v-spo2"><label>SpO₂</label><b>${v.spo2}%</b><small>${esc(v.o2)}</small></div>
+     <div class="vital v-rr"><label>RR</label><b>${v.rr}</b><small>/min</small></div>
+     <div class="vital v-t"><label>TEMP</label><b>${v.t}</b><small>°C</small></div>
+   </div>
+   <div class="box stab"><h3 style="margin:0">Patient stability</h3><div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${s}" aria-label="Patient stability"><div class="fill" style="width:${s}%;background:var(--${tone==="ok"?"ok":tone==="warn"?"lamp":"crit"})"></div></div><span class="lbl">${s}</span>
+     <span class="pill ${a.length?tone:"mute"}">${!a.length?"Awaiting assessment":tone==="ok"?"Improving":tone==="warn"?"Watch closely":"Declining"}</span></div>
+   <div class="grid2">
+     <div class="box"><h3>SBAR handoff from evening shift</h3><dl class="sbar">
+       <dt>S</dt><dd>${esc(c.s)}</dd><dt>B</dt><dd>${esc(c.b)}</dd><dt>A</dt><dd>${esc(c.a)}</dd><dt>R</dt><dd>${esc(c.r)}</dd></dl></div>
+     <div class="box"><h3>Labs &amp; results</h3><table class="labs">${labs}</table><h3 style="margin-top:14px">Active orders</h3><ul class="meds">${c.meds.map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div>
+   </div>
+   ${qhtml}${outcome}`;
+  document.querySelectorAll(".opt:not(:disabled)").forEach(b=>b.onclick=()=>{
+    const qi=+b.dataset.q,oi=+b.dataset.o;const arr=state.ans[c.id]||(state.ans[c.id]=[]);if(arr.length!==qi)return;arr.push(oi);save();render();
+    const qs=document.querySelectorAll(".q");const last=isDone(c)?document.querySelector(".outcome"):qs[qs.length-1];if(last)last.scrollIntoView({behavior:"smooth",block:"center"})});
+  const nb=$("#nextBtn");if(nb)nb.onclick=()=>{state.cur=+nb.dataset.n;save();render();window.scrollTo({top:0,behavior:"smooth"})};
+  const tr=$("#toReport");if(tr)tr.onclick=()=>{state.view="report";save();render();window.scrollTo({top:0})};
+  const rd=$("#redoBtn");if(rd)rd.onclick=()=>{delete state.ans[c.id];save();render()};
+}
+
+function reportText(){
+  const t=totals();const lines=[];
+  lines.push("CLINICAL ROUNDS: THE NIGHT SHIFT — End-of-shift report");
+  lines.push("Student: "+(state.name||"(name not entered)"));
+  lines.push("Total: "+t.score+"/30 ("+Math.round(t.score/30*100)+"%)");
+  CATS.forEach(cat=>{let n=0,d=0;CASES.forEach(c=>c.qs.forEach((q,i)=>{if(q.cat===cat){d++;if(answers(c)[i]===q.c)n++}}));lines.push(cat+": "+n+"/"+d)});
+  lines.push("");
+  CASES.forEach(c=>lines.push("Room "+c.id+" "+c.name+" ("+c.dx+"): "+caseScore(c)+"/3"));
+  const miss=[];CASES.forEach(c=>c.qs.forEach((q,i)=>{if(answers(c)[i]!==q.c)miss.push("Rm "+c.id+": "+q.topic)}));
+  lines.push("");lines.push("Topics to review:");lines.push(miss.length?miss.map(m=>"- "+m).join("\n"):"- None. Full marks.");
+  return lines.join("\n");
+}
+
+function renderReport(){
+  const t=totals();const pct=Math.round(t.score/30*100);
+  const cats=CATS.map(cat=>{let n=0,d=0;CASES.forEach(c=>c.qs.forEach((q,i)=>{if(q.cat===cat){d++;if(answers(c)[i]===q.c)n++}}));
+    return `<div class="box cat"><h3>${esc(cat)}</h3><b>${n}/${d}</b><span>${Math.round(n/d*100)}% correct</span></div>`}).join("");
+  const rows=CASES.map(c=>{const sc=caseScore(c),tone=sc===3?"ok":sc===2?"warn":"crit",lab=sc===3?"Stable":sc===2?"Guarded":"Deteriorating";
+    return `<tr><td class="n">${c.id}</td><td>${esc(c.name)}</td><td>${esc(c.dx)}</td><td class="n">${sc}/3</td><td><span class="pill ${tone}">${lab}</span></td></tr>`}).join("");
+  const miss=[];CASES.forEach(c=>c.qs.forEach((q,i)=>{if(answers(c)[i]!==q.c)miss.push(`<li><b>Room ${c.id}:</b> ${esc(q.topic)}</li>`)}));
+  $("#chart").innerHTML=`<section class="report" style="display:flex;flex-direction:column;gap:16px">
+    <div><h2>End-of-shift report</h2><p class="sub">07:00 · ${t.score}/30 decisions correct (${pct}%)</p></div>
+    <div class="cats">${cats}</div>
+    <div class="box"><h3>Patients at handoff</h3><div class="tbl-wrap"><table class="rtbl"><thead><tr><th>Room</th><th>Patient</th><th>Diagnosis</th><th>Score</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    <div class="box"><h3>Topics to review</h3>${miss.length?`<ul class="review">${miss.join("")}</ul>`:"<p>None. Every decision was correct.</p>"}</div>
+    <div class="box" style="display:flex;flex-direction:column;gap:10px"><h3>Submit to Canvas</h3>
+      <div class="field"><label for="stuName">Your name</label><input id="stuName" value="${esc(state.name)}" autocomplete="name"></div>
+      <textarea class="copytext" id="repText" readonly aria-label="Report text">${esc(reportText())}</textarea>
+      <div class="actions"><button class="btn primary" id="copyBtn">Copy report</button><button class="btn" id="backBtn">Back to the unit</button><span class="toast" id="toast" aria-live="polite"></span></div>
+      <p class="note">Paste the copied report into the Canvas assignment or discussion your instructor set up.</p></div>
+    <p class="note">Educational simulation for BSN students. Rationales reflect common evidence-based practice; always follow current institutional protocols and provider orders.</p>
+  </section>`;
+  $("#stuName").oninput=e=>{state.name=e.target.value;save();$("#repText").value=reportText()};
+  $("#copyBtn").onclick=()=>{const ta=$("#repText");const txt=ta.value;
+    const done=()=>{$("#toast").textContent="Copied"};
+    try{navigator.clipboard.writeText(txt).then(done,()=>{ta.focus();ta.select();$("#toast").textContent="Selected. Press Ctrl+C or ⌘C to copy."})}catch(e){ta.focus();ta.select();$("#toast").textContent="Selected. Press Ctrl+C or ⌘C to copy."}};
+  $("#backBtn").onclick=()=>{state.view="case";save();render()};
+}
+
+function render(){renderHud();renderRooms();if(state.view==="report"&&totals().seen===CASES.length)renderReport();else{state.view="case";renderCase()}}
+
+$("#reportBtn").onclick=()=>{state.view="report";save();render();window.scrollTo({top:0})};
+$("#resetBtn").onclick=()=>{const b=$("#resetBtn");if(b.dataset.armed){state={cur:0,ans:{},name:state.name,view:"case"};save();b.textContent="Start a new shift";delete b.dataset.armed;render()}else{b.dataset.armed="1";b.textContent="Tap again to clear progress";setTimeout(()=>{if(b.dataset.armed){delete b.dataset.armed;b.textContent="Start a new shift"}},4000)}};
+
+function start(data){if(data&&data.ans)state=Object.assign(state,data);else load();render()}
+window.claude?.hot?.snapshot?.(()=>state);
+window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.hot?.data??{});
+</script>
+
+</body>
+</html>
